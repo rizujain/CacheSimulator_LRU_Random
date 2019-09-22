@@ -1,8 +1,8 @@
-/* Author 
+/* Author
     Name:   Rizu Jain
     UIN:    430000753
     Email:  rizujain@tamu.edu
-    
+
     This file is a part of HW2 submission
     For CSCE 614 Fall 2019
     Department of Computer Science & Engineering
@@ -95,8 +95,8 @@ void computeBits(void)
     debug("Tag Bits %d \r\n", tagBits);
 }
 
-/* 
- * Main function 
+/*
+ * Main function
  */
 int main(int argc, const char *argv[])
 {
@@ -108,7 +108,7 @@ int main(int argc, const char *argv[])
     ret = parse_cmdline(argc, argv);
     if (ret < 0)
     {
-        printf("%s failed to parse arguments\n", argv[0]);
+        printf("%s failed to parse arguments \r\n", argv[0]);
         return ret;
     }
 

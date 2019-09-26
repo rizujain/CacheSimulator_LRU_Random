@@ -38,12 +38,20 @@
 static unsigned long int nk;
 static int assoc;
 static unsigned long int blocksize;
-static char repl;
+static char repl_policy;
 
 static int numberSets;
 static int indexBits;
 static int offsetBits;
 static int tagBits;
+
+/* entities to count hits and misses */
+int empty = -1;    //index of empty space
+int flagHit = 0;   //is there a hit
+int flagEvict = 0; //is there an eviction
+int count_hits = 0;
+int count_misses = 0;
+int count_evictions = 0;
 
 /* Typedef for storing addresses */
 typedef unsigned long long addr64_t;
@@ -67,13 +75,15 @@ typedef struct
     set_cache *set;
 } cache_struct;
 
+cache_struct mycache;
+
 static void print_help(void)
 {
     printf("The program ./simulate_cache takes the following arguments: \r\n");
     printf("nk: the capacity of the cache in kilobytes (an int) \n");
     printf("assoc: the associativity of the cache (an int) \n");
     printf("blocksize: the size of a single cache block in bytes (an int) \n");
-    printf("repl: the replacement policy (a char); 'l' means LRU, 'r' means random. \n");
+    printf("repl_policy: the replacement policy (a char); 'l' means LRU, 'r' means random. \n");
 }
 
 static int parse_cmdline(int argc, const char *argv[])
@@ -90,9 +100,9 @@ static int parse_cmdline(int argc, const char *argv[])
     assoc = strtoul(argv[2], NULL, 0);
     blocksize = strtoul(argv[3], NULL, 0);
     if (strcmp(argv[4], "r") == 0)
-        repl = 1; // Random replacement policy
+        repl_policy = 1; // Random replacement policy
     else
-        repl = 0; // LRU replacement policy (default)
+        repl_policy = 0; // LRU replacement policy (default)
 
     return 0;
 }
@@ -111,60 +121,13 @@ void computeBits(void)
     debug("Tag Bits %d \r\n", tagBits);
 }
 
-/*
- * Main function
- */
-int main(int argc, const char *argv[])
+int do_lru_cacheReplPolicy(int argc, const char *argv[], cache_struct mycache)
 {
-    int ret = 0;
-    cache_struct mycache;
-    int i = 0;
-    char *trace_file;
-
-    debug("Welcome to Cache Simulation! \r\n");
-
-    ret = parse_cmdline(argc, argv);
-    if (ret < 0)
-    {
-        printf("%s failed to parse arguments \r\n", argv[0]);
-        return ret;
-    }
-
-#ifdef DEBUG
-    // Verify parsing of commands
-    printf("nk %ld \r\n", nk);
-    printf("assoc %d \r\n", assoc);
-    printf("blocksize %ld \r\n", blocksize);
-    printf("repl %d \r\n", repl);
-#endif
-
-    /* Initialise a Cache:
-    compute parameter values
-    and allocate memory for the cache */
-
-    /* Calculate number of sets and cache reg bits */
-    computeBits();
-    /* memory allocation for sets and block */
-    mycache.set = malloc(numberSets * sizeof(set_cache));
-    while (i < numberSets)
-    {
-        mycache.set[i++].block = malloc(blocksize * sizeof(block_cache));
-    }
-
-    /* entities to count hits and misses */
-    int TSTAMP = 0; //value for LRU
-    int empty = -1; //index of empty space
-    int H = 0;      //is there a hit
-    int E = 0;      //is there an eviction
-    int count_hits = 0;
-    int count_misses = 0;
-    int count_evictions = 0;
+    int timestamp = 0; //value for LRU
 
     /* Trace file contents */
     addr64_t addr_trace;
     char access_trace; // can be w or r for write/read
-
-    /* Trace File Handling */
 
     //open the file and read it in
     FILE *traceFile = fopen("trace.txt", "r");
@@ -196,9 +159,9 @@ int main(int argc, const char *argv[])
                         if (set.block[e].tag == addr_tag)
                         {
                             count_hits++;
-                            H = 1;
-                            set.block[e].timestamp = TSTAMP;
-                            TSTAMP++;
+                            flagHit = 1;
+                            set.block[e].timestamp = timestamp;
+                            timestamp++;
                         }
                         // CHANGED WHOLE ELSE: look for oldest for eviction.
                         else if (set.block[e].timestamp < low)
@@ -215,7 +178,7 @@ int main(int argc, const char *argv[])
                 }
 
                 //if we have a miss
-                if (H != 1)
+                if (flagHit != 1)
                 {
                     count_misses++;
                     //if we have an empty line
@@ -223,16 +186,16 @@ int main(int argc, const char *argv[])
                     {
                         set.block[empty].valid = 1;
                         set.block[empty].tag = addr_tag;
-                        set.block[empty].timestamp = TSTAMP;
-                        TSTAMP++;
+                        set.block[empty].timestamp = timestamp;
+                        timestamp++;
                     }
                     //if the set is full we need to evict
                     else if (empty < 0)
                     {
-                        E = 1;
+                        flagEvict = 1;
                         set.block[toEvict].tag = addr_tag;
-                        set.block[toEvict].timestamp = TSTAMP;
-                        TSTAMP++; // CHANGED: increment TSTAMP here too
+                        set.block[toEvict].timestamp = timestamp;
+                        timestamp++; // CHANGED: increment timestamp here too
                         count_evictions++;
                     }
                 }
@@ -243,11 +206,74 @@ int main(int argc, const char *argv[])
                 }
 
                 empty = -1;
-                H = 0;
-                E = 0;
+                flagHit = 0;
+                flagEvict = 0;
             }
         }
     }
+
+    return 0;
+}
+
+int do_random_cacheReplPolicy(int argc, const char *argv[], cache_struct mycache)
+{
+    return 0;
+}
+
+/*
+ * Main function
+ */
+int main(int argc, const char *argv[])
+{
+    int ret = 0;
+    int i = 0;
+    char *trace_file;
+
+    debug("Welcome to Cache Simulation! \r\n");
+
+    ret = parse_cmdline(argc, argv);
+    if (ret < 0)
+    {
+        printf("%s failed to parse arguments \r\n", argv[0]);
+        return ret;
+    }
+
+#ifdef DEBUG
+    // Verify parsing of commands
+    printf("nk %ld \r\n", nk);
+    printf("assoc %d \r\n", assoc);
+    printf("blocksize %ld \r\n", blocksize);
+    printf("repl_policy %d \r\n", repl_policy);
+#endif
+
+    /* Initialise a Cache:
+    compute parameter values
+    and allocate memory for the cache */
+
+    /* Calculate number of sets and cache reg bits */
+    computeBits();
+    /* memory allocation for sets and block */
+    mycache.set = malloc(numberSets * sizeof(set_cache));
+    while (i < numberSets)
+    {
+        mycache.set[i++].block = malloc(blocksize * sizeof(block_cache));
+    }
+
+    if (repl_policy == 0)
+    {
+        /* Go to LRU replacement policy */
+        ret = do_lru_cacheReplPolicy(argc, argv, mycache);
+        if (ret != 0)
+            printf("Didn't successfully do LRU! ");
+    }
+    else
+    {
+        /* Goto Random replacement policy */
+        ret = do_random_cacheReplPolicy(argc, argv, mycache);
+        if (ret != 0)
+            printf("Didn't successfully do random replacement! ");
+    }
+
     printf("hits: %d   misses: %d   evictions: %d\n", count_hits, count_misses, count_evictions);
 
     return 0;

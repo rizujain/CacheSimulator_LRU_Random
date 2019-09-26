@@ -275,6 +275,10 @@ int main(int argc, const char *argv[])
     }
 
     printf("hits: %d   misses: %d   evictions: %d\n", count_hits, count_misses, count_evictions);
+    while (i < numberSets)
+    {
+        free(mycache.set[i++].block);
+    }
 
     return 0;
 }

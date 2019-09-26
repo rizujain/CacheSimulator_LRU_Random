@@ -50,7 +50,8 @@ int empty = -1;    //index of empty space
 int flagHit = 0;   //is there a hit
 int flagEvict = 0; //is there an eviction
 int count_hits = 0;
-int count_misses = 0;
+int count_misses_write = 0;
+int count_misses_read = 0;
 int count_evictions = 0;
 
 /* Typedef for storing addresses */
@@ -104,6 +105,8 @@ static int parse_cmdline(int argc, const char *argv[])
     else
         repl_policy = 0; // LRU replacement policy (default)
 
+    /* TODO: Check power of 2 restrictions on input parameters. */
+
     return 0;
 }
 
@@ -119,105 +122,6 @@ void computeBits(void)
     debug("Index Bits %d \r\n", indexBits);
     tagBits = ADDR_SIZE - (indexBits + offsetBits);
     debug("Tag Bits %d \r\n", tagBits);
-}
-
-int do_lru_cacheReplPolicy(int argc, const char *argv[], cache_struct mycache)
-{
-    int timestamp = 0; //value for LRU
-
-    /* Trace file contents */
-    addr64_t addr_trace;
-    char access_trace; // can be w or r for write/read
-
-    //open the file and read it in
-    FILE *traceFile = fopen("trace.txt", "r");
-    if (traceFile == NULL)
-    {
-        printf("no such file.");
-        return 0;
-    }
-
-    if (traceFile != NULL)
-    {
-        while (fscanf(traceFile, " %c %llx", &access_trace, &addr_trace) == 2)
-        {
-            int toEvict = 0; //keeps track of what to evict
-            if (access_trace != 'I')
-            {
-                //calculate address tag and set index
-                addr64_t addr_tag = addr_trace >> (offsetBits + indexBits);
-                unsigned long long temp = addr_trace << (tagBits);
-                unsigned long long setid = temp >> (tagBits + offsetBits);
-                set_cache set = mycache.set[setid];
-                int low = INT_MAX;
-
-                for (int e = 0; e < blocksize; e++)
-                {
-                    if (set.block[e].valid == 1)
-                    {
-                        // CHANGED ORDER: look for hit before eviction candidates
-                        if (set.block[e].tag == addr_tag)
-                        {
-                            count_hits++;
-                            flagHit = 1;
-                            set.block[e].timestamp = timestamp;
-                            timestamp++;
-                        }
-                        // CHANGED WHOLE ELSE: look for oldest for eviction.
-                        else if (set.block[e].timestamp < low)
-                        {
-                            low = set.block[e].timestamp;
-                            toEvict = e;
-                        }
-                    }
-                    // CHANGED: if we haven't yet found an empty, mark one that we found.
-                    else if (empty == -1)
-                    {
-                        empty = e;
-                    }
-                }
-
-                //if we have a miss
-                if (flagHit != 1)
-                {
-                    count_misses++;
-                    //if we have an empty line
-                    if (empty > -1)
-                    {
-                        set.block[empty].valid = 1;
-                        set.block[empty].tag = addr_tag;
-                        set.block[empty].timestamp = timestamp;
-                        timestamp++;
-                    }
-                    //if the set is full we need to evict
-                    else if (empty < 0)
-                    {
-                        flagEvict = 1;
-                        set.block[toEvict].tag = addr_tag;
-                        set.block[toEvict].timestamp = timestamp;
-                        timestamp++; // CHANGED: increment timestamp here too
-                        count_evictions++;
-                    }
-                }
-                //if the instruction is M, we will always get a hit
-                if (access_trace == 'M')
-                {
-                    count_hits++;
-                }
-
-                empty = -1;
-                flagHit = 0;
-                flagEvict = 0;
-            }
-        }
-    }
-
-    return 0;
-}
-
-int do_random_cacheReplPolicy(int argc, const char *argv[], cache_struct mycache)
-{
-    return 0;
 }
 
 /*
@@ -257,6 +161,92 @@ int main(int argc, const char *argv[])
     while (i < numberSets)
     {
         mycache.set[i++].block = malloc(blocksize * sizeof(block_cache));
+    }
+
+    int timestamp = 0; //value for LRU
+
+    /* Trace file contents */
+    addr64_t addr_trace;
+    char access_trace; // can be w or r for write/read
+
+    //open the file and read it in
+    FILE *traceFile = fopen("trace.txt", "r");
+    if (traceFile == NULL)
+    {
+        printf("no such file.");
+        return 0;
+    }
+
+    if (traceFile != NULL)
+    {
+        while (fscanf(traceFile, " %c %llx", &access_trace, &addr_trace) == 2)
+        {
+
+
+
+            int toEvict = 0; //keeps track of what to evict
+            //calculate address tag and set index
+            addr64_t addr_tag = addr_trace >> (offsetBits + indexBits);
+            unsigned long long temp = addr_trace << (tagBits);
+            unsigned long long setid = temp >> (tagBits + offsetBits);
+            set_cache set = mycache.set[setid];
+            int time_bomb = INT_MAX;
+
+            for (int e = 0; e < blocksize; e++)
+            {
+                if (set.block[e].valid == 1)
+                {
+                    if (set.block[e].tag == addr_tag)
+                    {
+                        count_hits++;
+                        flagHit = 1;
+                        set.block[e].timestamp = timestamp;
+                        timestamp++;
+                    }
+                    else if (set.block[e].timestamp < time_bomb)
+                    {
+                        time_bomb = set.block[e].timestamp;
+                        toEvict = e;
+                    }
+                }
+                else if (empty == -1)
+                {
+                    empty = e;
+                }
+            }
+
+            //if we have a miss
+            if (flagHit != 1)
+            {
+                count_misses++;
+                //if we have an empty line
+                if (empty > -1)
+                {
+                    set.block[empty].valid = 1;
+                    set.block[empty].tag = addr_tag;
+                    set.block[empty].timestamp = timestamp;
+                    timestamp++;
+                }
+                //if the set is full we need to evict
+                else if (empty < 0)
+                {
+                    flagEvict = 1;
+                    set.block[toEvict].tag = addr_tag;
+                    set.block[toEvict].timestamp = timestamp;
+                    timestamp++; // CHANGED: increment timestamp here too
+                    count_evictions++;
+                }
+            }
+            //if the instruction is M, we will always get a hit
+            if (access_trace == 'M')
+            {
+                count_hits++;
+            }
+
+            empty = -1;
+            flagHit = 0;
+            flagEvict = 0;
+        }
     }
 
     if (repl_policy == 0)

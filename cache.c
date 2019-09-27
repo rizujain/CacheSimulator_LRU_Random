@@ -9,6 +9,12 @@
     Texas A&M University, College Station.
 */
 
+/* Compile and Test Instructions
+rizu@rizu-linux:~/HW2$ gcc cache.c -o cache
+rizu@rizu-linux:~/HW2$ gzip -dc ../traces/433.milc-127B.trace.txt.gz | ./cache 2048 64 64 l
+22271 2.227100% 17850 1.858543% 4421 11.172606%
+*/
+
 /* Standard Header files */
 #include <stdio.h>
 #include <stdlib.h>

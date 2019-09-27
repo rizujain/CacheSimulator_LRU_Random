@@ -50,6 +50,7 @@ int empty = -1;    //index of empty space
 int flagHit = 0;   //is there a hit
 int flagEvict = 0; //is there an eviction
 int count_hits = 0;
+int count_reads = 0;
 int count_misses_write = 0;
 int count_misses_read = 0;
 int count_evictions = 0;
@@ -77,6 +78,7 @@ typedef struct
 } cache_struct;
 
 cache_struct mycache;
+
 
 static void print_help(void)
 {
@@ -122,6 +124,21 @@ void computeBits(void)
     debug("Index Bits %d \r\n", indexBits);
     tagBits = ADDR_SIZE - (indexBits + offsetBits);
     debug("Tag Bits %d \r\n", tagBits);
+}
+
+void printjob(void)
+{
+    int total_misses = count_misses_write + count_misses_read;
+    int total_access = count_hits + total_misses;
+    debug("total_access %d \n", total_access);
+    debug("count_reads %d\n", count_reads );
+    debug("count_writes %d\n",total_access - count_reads );
+    printf("%d %.6f%% %d %.6f%% %d %.6f%%\r\n", total_misses,
+           (total_misses * 100 / (double) total_access),
+           count_misses_read,
+           (count_misses_read * 100 /(double)  count_reads),
+           count_misses_write,
+           (count_misses_write * 100 /(double) (total_access - count_reads)));
 }
 
 /*
@@ -181,9 +198,6 @@ int main(int argc, const char *argv[])
     {
         while (fscanf(traceFile, " %c %llx", &access_trace, &addr_trace) == 2)
         {
-
-
-
             int toEvict = 0; //keeps track of what to evict
             //calculate address tag and set index
             addr64_t addr_tag = addr_trace >> (offsetBits + indexBits);
@@ -192,33 +206,40 @@ int main(int argc, const char *argv[])
             set_cache set = mycache.set[setid];
             int time_bomb = INT_MAX;
 
-            for (int e = 0; e < blocksize; e++)
+            if (access_trace == 'r')
+                count_reads++;
+
+            for (int cnt = 0; cnt < blocksize; cnt++)
             {
-                if (set.block[e].valid == 1)
+                if (set.block[cnt].valid == 1)
                 {
-                    if (set.block[e].tag == addr_tag)
+                    if (set.block[cnt].tag == addr_tag)
                     {
                         count_hits++;
                         flagHit = 1;
-                        set.block[e].timestamp = timestamp;
+                        set.block[cnt].timestamp = timestamp;
                         timestamp++;
                     }
-                    else if (set.block[e].timestamp < time_bomb)
+                    else if (set.block[cnt].timestamp < time_bomb)
                     {
-                        time_bomb = set.block[e].timestamp;
-                        toEvict = e;
+                        time_bomb = set.block[cnt].timestamp;
+                        toEvict = cnt;
                     }
                 }
                 else if (empty == -1)
                 {
-                    empty = e;
+                    empty = cnt;
                 }
             }
 
             //if we have a miss
             if (flagHit != 1)
             {
-                count_misses++;
+                if (access_trace == 'r')
+                    count_misses_read++;
+                else
+                    count_misses_write++;
+
                 //if we have an empty line
                 if (empty > -1)
                 {
@@ -237,11 +258,6 @@ int main(int argc, const char *argv[])
                     count_evictions++;
                 }
             }
-            //if the instruction is M, we will always get a hit
-            if (access_trace == 'M')
-            {
-                count_hits++;
-            }
 
             empty = -1;
             flagHit = 0;
@@ -249,22 +265,7 @@ int main(int argc, const char *argv[])
         }
     }
 
-    if (repl_policy == 0)
-    {
-        /* Go to LRU replacement policy */
-        ret = do_lru_cacheReplPolicy(argc, argv, mycache);
-        if (ret != 0)
-            printf("Didn't successfully do LRU! ");
-    }
-    else
-    {
-        /* Goto Random replacement policy */
-        ret = do_random_cacheReplPolicy(argc, argv, mycache);
-        if (ret != 0)
-            printf("Didn't successfully do random replacement! ");
-    }
-
-    printf("hits: %d   misses: %d   evictions: %d\n", count_hits, count_misses, count_evictions);
+    printjob();
     while (i < numberSets)
     {
         free(mycache.set[i++].block);

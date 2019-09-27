@@ -56,7 +56,7 @@ int count_misses_read = 0;
 int count_evictions = 0;
 
 /* Typedef for storing addresses */
-typedef unsigned long long addr64_t;
+typedef unsigned long long int addr64_t;
 
 /* Structure Definitions */
 
@@ -79,6 +79,23 @@ typedef struct
 
 cache_struct mycache;
 
+/* Implement a helper function for log b2
+ * The compiler throws error unless -lm is included. */
+int logbasetwo(int num)
+{
+    unsigned int logValue = -1;
+    if (num == 0)
+    {
+        printf("ERR! Invalid arg to log \r\n");
+    }
+    while (num)
+    {
+        /* code */
+        logValue++;
+        num /= 2;
+    }
+    return logValue;
+}
 
 static void print_help(void)
 {
@@ -118,9 +135,9 @@ void computeBits(void)
     numberSets = (nk * 1024) / (blocksize * assoc);
     debug("Total Number of Sets %d \r\n", numberSets);
     /* Compute numbder of bits for tag, index and offset */
-    offsetBits = (round((log(blocksize)) / (log(2))));
+    offsetBits = logbasetwo(blocksize);
     debug("Offset Bits %d \r\n", offsetBits);
-    indexBits = (log(numberSets)) / (log(2));
+    indexBits = logbasetwo(numberSets);
     debug("Index Bits %d \r\n", indexBits);
     tagBits = ADDR_SIZE - (indexBits + offsetBits);
     debug("Tag Bits %d \r\n", tagBits);
@@ -131,14 +148,14 @@ void printjob(void)
     int total_misses = count_misses_write + count_misses_read;
     int total_access = count_hits + total_misses;
     debug("total_access %d \n", total_access);
-    debug("count_reads %d\n", count_reads );
-    debug("count_writes %d\n",total_access - count_reads );
+    debug("count_reads %d\n", count_reads);
+    debug("count_writes %d\n", total_access - count_reads);
     printf("%d %.6f%% %d %.6f%% %d %.6f%%\r\n", total_misses,
-           (total_misses * 100 / (double) total_access),
+           (total_misses * 100 / (double)total_access),
            count_misses_read,
-           (count_misses_read * 100 /(double)  count_reads),
+           (count_misses_read * 100 / (double)count_reads),
            count_misses_write,
-           (count_misses_write * 100 /(double) (total_access - count_reads)));
+           (count_misses_write * 100 / (double)(total_access - count_reads)));
 }
 
 /*
@@ -180,89 +197,88 @@ int main(int argc, const char *argv[])
         mycache.set[i++].block = malloc(blocksize * sizeof(block_cache));
     }
 
-    int timestamp = 0; //value for LRU
-
-    /* Trace file contents */
-    addr64_t addr_trace;
-    char access_trace; // can be w or r for write/read
+    /* this shall be used for LRU */
+    int timestamp = 0;
 
     //open the file and read it in
-    FILE *traceFile = fopen("trace.txt", "r");
+    /*     FILE *traceFile = fopen("trace.txt", "r");
     if (traceFile == NULL)
     {
         printf("no such file.");
         return 0;
-    }
+    } */
 
-    if (traceFile != NULL)
+    /* Trace file contents */
+    addr64_t addr_trace; // 64 bit memory address
+    char access_trace;   // can be w or r for write/read
+
+    while (fscanf(stdin, " %c %llx", &access_trace, &addr_trace) == 2)
     {
-        while (fscanf(traceFile, " %c %llx", &access_trace, &addr_trace) == 2)
+        int toEvict = 0; //keeps track of what to evict
+
+        //calculate address tag and set index
+        addr64_t addr_tag = addr_trace >> (offsetBits + indexBits);
+        unsigned long long temp = addr_trace << (tagBits);
+        unsigned long long setid = temp >> (tagBits + offsetBits);
+        set_cache set = mycache.set[setid];
+        int time_bomb = INT_MAX;
+
+        if (access_trace == 'r')
+            count_reads++;
+
+        for (int cnt = 0; cnt < blocksize; cnt++)
         {
-            int toEvict = 0; //keeps track of what to evict
-            //calculate address tag and set index
-            addr64_t addr_tag = addr_trace >> (offsetBits + indexBits);
-            unsigned long long temp = addr_trace << (tagBits);
-            unsigned long long setid = temp >> (tagBits + offsetBits);
-            set_cache set = mycache.set[setid];
-            int time_bomb = INT_MAX;
-
-            if (access_trace == 'r')
-                count_reads++;
-
-            for (int cnt = 0; cnt < blocksize; cnt++)
+            if (set.block[cnt].valid == 1)
             {
-                if (set.block[cnt].valid == 1)
+                if (set.block[cnt].tag == addr_tag)
                 {
-                    if (set.block[cnt].tag == addr_tag)
-                    {
-                        count_hits++;
-                        flagHit = 1;
-                        set.block[cnt].timestamp = timestamp;
-                        timestamp++;
-                    }
-                    else if (set.block[cnt].timestamp < time_bomb)
-                    {
-                        time_bomb = set.block[cnt].timestamp;
-                        toEvict = cnt;
-                    }
-                }
-                else if (empty == -1)
-                {
-                    empty = cnt;
-                }
-            }
-
-            //if we have a miss
-            if (flagHit != 1)
-            {
-                if (access_trace == 'r')
-                    count_misses_read++;
-                else
-                    count_misses_write++;
-
-                //if we have an empty line
-                if (empty > -1)
-                {
-                    set.block[empty].valid = 1;
-                    set.block[empty].tag = addr_tag;
-                    set.block[empty].timestamp = timestamp;
+                    count_hits++;
+                    flagHit = 1;
+                    set.block[cnt].timestamp = timestamp;
                     timestamp++;
                 }
-                //if the set is full we need to evict
-                else if (empty < 0)
+                else if (set.block[cnt].timestamp < time_bomb)
                 {
-                    flagEvict = 1;
-                    set.block[toEvict].tag = addr_tag;
-                    set.block[toEvict].timestamp = timestamp;
-                    timestamp++; // CHANGED: increment timestamp here too
-                    count_evictions++;
+                    time_bomb = set.block[cnt].timestamp;
+                    toEvict = cnt;
                 }
             }
-
-            empty = -1;
-            flagHit = 0;
-            flagEvict = 0;
+            else if (empty == -1)
+            {
+                empty = cnt;
+            }
         }
+
+        //if we have a miss
+        if (flagHit != 1)
+        {
+            if (access_trace == 'r')
+                count_misses_read++;
+            else
+                count_misses_write++;
+
+            //if we have an empty line
+            if (empty > -1)
+            {
+                set.block[empty].valid = 1;
+                set.block[empty].tag = addr_tag;
+                set.block[empty].timestamp = timestamp;
+                timestamp++;
+            }
+            //if the set is full we need to evict
+            else if (empty < 0)
+            {
+                flagEvict = 1;
+                set.block[toEvict].tag = addr_tag;
+                set.block[toEvict].timestamp = timestamp;
+                timestamp++; // CHANGED: increment timestamp here too
+                count_evictions++;
+            }
+        }
+
+        empty = -1;
+        flagHit = 0;
+        flagEvict = 0;
     }
 
     printjob();

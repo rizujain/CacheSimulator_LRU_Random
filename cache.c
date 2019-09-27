@@ -14,7 +14,6 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
-
 #include <limits.h>
 
 /* Macros */
@@ -46,14 +45,12 @@ static int offsetBits;
 static int tagBits;
 
 /* entities to count hits and misses */
-int empty = -1;    //index of empty space
-int flagHit = 0;   //is there a hit
-int flagEvict = 0; //is there an eviction
+int empty = -1;  //index of empty space
+int flagHit = 0; //is there a hit
 int count_hits = 0;
 int count_reads = 0;
 int count_misses_write = 0;
 int count_misses_read = 0;
-int count_evictions = 0;
 
 /* Typedef for storing addresses */
 typedef unsigned long long int addr64_t;
@@ -166,6 +163,12 @@ int main(int argc, const char *argv[])
     int ret = 0;
     int i = 0;
     char *trace_file;
+    /* this shall be used for LRU */
+    int timestamp = 0;
+    /* Trace file contents */
+    addr64_t addr_trace; // 64 bit memory address
+    char access_trace;   // can be w or r for write/read
+    int time_limit = INT_MAX;
 
     debug("Welcome to Cache Simulation! \r\n");
 
@@ -185,8 +188,8 @@ int main(int argc, const char *argv[])
 #endif
 
     /* Initialise a Cache:
-    compute parameter values
-    and allocate memory for the cache */
+    1. compute parameter values
+    2. allocate memory for the cache */
 
     /* Calculate number of sets and cache reg bits */
     computeBits();
@@ -197,35 +200,31 @@ int main(int argc, const char *argv[])
         mycache.set[i++].block = malloc(blocksize * sizeof(block_cache));
     }
 
-    /* this shall be used for LRU */
-    int timestamp = 0;
-
-    //open the file and read it in
-    /*     FILE *traceFile = fopen("trace.txt", "r");
-    if (traceFile == NULL)
-    {
-        printf("no such file.");
-        return 0;
-    } */
-
-    /* Trace file contents */
-    addr64_t addr_trace; // 64 bit memory address
-    char access_trace;   // can be w or r for write/read
-
     while (fscanf(stdin, " %c %llx", &access_trace, &addr_trace) == 2)
     {
-        int toEvict = 0; //keeps track of what to evict
+        int toEvict = 0; // will hold which block to evict
 
-        //calculate address tag and set index
+        /* From the parsed tracefile:
+        1. get the memory address
+        2. Fetch the address tag from memory address
+        3. Calculate the set ID, feed it to structure.
+        */
         addr64_t addr_tag = addr_trace >> (offsetBits + indexBits);
         unsigned long long temp = addr_trace << (tagBits);
         unsigned long long setid = temp >> (tagBits + offsetBits);
         set_cache set = mycache.set[setid];
-        int time_bomb = INT_MAX;
 
+        /* Track total read accesses for performance metrics */
         if (access_trace == 'r')
             count_reads++;
 
+        /* Check for each block
+        1. if the valid bit is set >> to check if data present in cache block is valid or not.
+        2. then check if the addr_tag is already present in the block >> CACHE_HIT
+            2.1 set hit flag.
+        3. if not, start timer.
+        4. if cache not valid, update empty with the block number.
+        */
         for (int cnt = 0; cnt < blocksize; cnt++)
         {
             if (set.block[cnt].valid == 1)
@@ -237,9 +236,10 @@ int main(int argc, const char *argv[])
                     set.block[cnt].timestamp = timestamp;
                     timestamp++;
                 }
-                else if (set.block[cnt].timestamp < time_bomb)
+                else if (set.block[cnt].timestamp < time_limit)
                 {
-                    time_bomb = set.block[cnt].timestamp;
+                    // Add info to flag that this block can be evicted just in case.
+                    time_limit = set.block[cnt].timestamp;
                     toEvict = cnt;
                 }
             }
@@ -249,7 +249,10 @@ int main(int argc, const char *argv[])
             }
         }
 
-        //if we have a miss
+        /* Check for each block (continued)
+        4. if cache not valid, update empty with the block number.
+        5. Check for hit flag. if its not set, it represents a miss.
+        */
         if (flagHit != 1)
         {
             if (access_trace == 'r')
@@ -257,7 +260,6 @@ int main(int argc, const char *argv[])
             else
                 count_misses_write++;
 
-            //if we have an empty line
             if (empty > -1)
             {
                 set.block[empty].valid = 1;
@@ -265,23 +267,24 @@ int main(int argc, const char *argv[])
                 set.block[empty].timestamp = timestamp;
                 timestamp++;
             }
-            //if the set is full we need to evict
+
+            /* The following code will evict the data from block flagged for eviction
+            in case the set it full. */
+            /* This is based upon the LRU repl_policy */
             else if (empty < 0)
             {
-                flagEvict = 1;
                 set.block[toEvict].tag = addr_tag;
                 set.block[toEvict].timestamp = timestamp;
-                timestamp++; // CHANGED: increment timestamp here too
-                count_evictions++;
+                timestamp++;
             }
         }
-
         empty = -1;
         flagHit = 0;
-        flagEvict = 0;
     }
 
     printjob();
+    free(mycache.set);
+    /* Todo: optimise it later. */
     while (i < numberSets)
     {
         free(mycache.set[i++].block);

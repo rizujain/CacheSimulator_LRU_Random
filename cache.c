@@ -125,7 +125,7 @@ static int parse_cmdline(int argc, const char *argv[])
     if (strcmp(argv[4], "r") == 0)
         repl_policy = 1; // Random replacement policy
     else
-        repl_policy = 0; // LRU replacement policy (default)
+        repl_policy = 0; // LRU replacement policy
 
     /* TODO: Check power of 2 restrictions on input parameters. */
 
@@ -160,6 +160,8 @@ void printjob(void)
            count_misses_write,
            (count_misses_write * 100 / (double)(total_access - count_reads)));
 }
+
+int checkthis = 0;
 
 /*
  * Main function
@@ -239,11 +241,16 @@ int main(int argc, const char *argv[])
                 {
                     count_hits++;
                     flagHit = 1;
-                    set.block[cnt].timestamp = timestamp;
-                    timestamp++;
+                    if (repl_policy == 0)
+                    {
+                        //debug("DBG_REPL : %s : %d \r\n", __func__, __LINE__);
+                        set.block[cnt].timestamp = timestamp;
+                        timestamp++;
+                    }
                 }
-                else if (set.block[cnt].timestamp < time_limit)
+                else if ((repl_policy == 0) && (set.block[cnt].timestamp < time_limit))
                 {
+                    //debug("DBG_REPL : %s : %d \r\n", __func__, __LINE__);
                     // Add info to flag that this block can be evicted just in case.
                     time_limit = set.block[cnt].timestamp;
                     toEvict = cnt;
@@ -270,18 +277,32 @@ int main(int argc, const char *argv[])
             {
                 set.block[empty].valid = 1;
                 set.block[empty].tag = addr_tag;
-                set.block[empty].timestamp = timestamp;
-                timestamp++;
+                if (repl_policy == 0)
+                {
+                    //debug("DBG_REPL : %s : %d \r\n", __func__, __LINE__);
+                    set.block[empty].timestamp = timestamp;
+                    timestamp++;
+                }
             }
 
             /* The following code will evict the data from block flagged for eviction
             in case the set it full. */
-            /* This is based upon the LRU repl_policy */
             else if (empty < 0)
             {
+                if (repl_policy == 0)
+                {
+                    //debug("DBG_REPL LRU: %s : %d \r\n", __func__, __LINE__);
+                    /* This is based upon the LRU repl_policy */
+                    set.block[toEvict].timestamp = timestamp;
+                    timestamp++;
+                }
+                else
+                {
+                    //debug("DBG_REPL random: %s : %d \r\n", __func__, checkthis++);
+                    /* Random Replacement Policy */
+                    toEvict = rand() % assoc;
+                }
                 set.block[toEvict].tag = addr_tag;
-                set.block[toEvict].timestamp = timestamp;
-                timestamp++;
             }
         }
         empty = -1;

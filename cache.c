@@ -150,7 +150,10 @@ void printjob(void)
 {
     int total_misses = count_misses_write + count_misses_read;
     int total_access = count_hits + total_misses;
+    debug("count_misses_write %d \n", count_misses_write);
+    debug("count_misses_read %d \n", count_misses_read);
     debug("total_access %d \n", total_access);
+    debug("count_hits %d \n", count_hits);
     debug("count_reads %d\n", count_reads);
     debug("count_writes %d\n", total_access - count_reads);
     printf("%d %.6f%% %d %.6f%% %d %.6f%%\r\n", total_misses,
@@ -161,8 +164,6 @@ void printjob(void)
            (count_misses_write * 100 / (double)(total_access - count_reads)));
 }
 
-int checkthis = 0;
-
 /*
  * Main function
  */
@@ -171,12 +172,14 @@ int main(int argc, const char *argv[])
     int ret = 0;
     int i = 0;
     char *trace_file;
+
     /* this shall be used for LRU */
     int timestamp = 0;
-    /* Trace file contents */
-    addr64_t addr_trace; // 64 bit memory address
-    char access_trace;   // can be w or r for write/read
     int time_limit = INT_MAX;
+
+    /* Trace file contents */
+    addr64_t addr_trace; // for 64-bit memory
+    char access_trace;   // can be w or r for write/read
 
     debug("Welcome to Cache Simulation! \r\n");
 
@@ -210,7 +213,7 @@ int main(int argc, const char *argv[])
 
     while (fscanf(stdin, " %c %llx", &access_trace, &addr_trace) == 2)
     {
-        int toEvict = 0; // will hold which block to evict
+        int toEvict = 0; // to determine which block to evict
 
         /* From the parsed tracefile:
         1. get the memory address
@@ -298,7 +301,7 @@ int main(int argc, const char *argv[])
                 }
                 else
                 {
-                    //debug("DBG_REPL random: %s : %d \r\n", __func__, checkthis++);
+                    //debug("DBG_REPL random: %s : %d \r\n", __func__,__LINE__);
                     /* Random Replacement Policy */
                     toEvict = rand() % assoc;
                 }

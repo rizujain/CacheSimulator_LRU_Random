@@ -1,0 +1,32 @@
+diff --git a/cache.c b/cache.c
+index 464d46c..6d77fd8 100644
+--- a/cache.c
++++ b/cache.c
+@@ -150,7 +150,10 @@ void printjob(void)
+ {
+     int total_misses = count_misses_write + count_misses_read;
+     int total_access = count_hits + total_misses;
++    debug("count_misses_write %d \n", count_misses_write);
++    debug("count_misses_read %d \n", count_misses_read);
+     debug("total_access %d \n", total_access);
++    debug("count_hits %d \n", count_hits);
+     debug("count_reads %d\n", count_reads);
+     debug("count_writes %d\n", total_access - count_reads);
+     printf("%d %.6f%% %d %.6f%% %d %.6f%%\r\n", total_misses,
+@@ -169,12 +172,14 @@ int main(int argc, const char *argv[])
+     int ret = 0;
+     int i = 0;
+     char *trace_file;
++
+     /* this shall be used for LRU */
+     int timestamp = 0;
++    int time_limit = INT_MAX;
++
+     /* Trace file contents */
+-    addr64_t addr_trace; // 64 bit memory address
++    addr64_t addr_trace; // for 64-bit memory
+     char access_trace;   // can be w or r for write/read
+-    int time_limit = INT_MAX;
+ 
+     debug("Welcome to Cache Simulation! \r\n");
+ 
